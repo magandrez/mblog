@@ -5,7 +5,7 @@ from datetime import datetime
 from app import app, db, lm, oid
 from .forms import LoginForm, EditForm
 from .models import User
-import pprint
+
 
 @lm.user_loader
 def load_user(id):
@@ -64,7 +64,10 @@ def after_login(resp):
         return redirect(url_for('login'))
     user = User.query.filter_by(nickname=resp.nickname).first()
     if user is None:
-        user = User(nickname=resp.nickname, email=resp.nickname+"@gmail.com")
+        nickname = User.make_unique_nickname(resp.nickname)
+        #  resp does not contain anymore the email,
+        #  so I chose to combine the nickname with a gmail domain for the email
+        user = User(nickname=nickname, email=nickname+"@gmail.com")
         db.session.add(user)
         db.session.commit()
     remember_me = False
@@ -73,7 +76,6 @@ def after_login(resp):
         session.pop('remember_me', None)
     login_user(user, remember=remember_me)
     return redirect(request.args.get('next') or url_for('index'))
-
 
 
 @app.route('/logout')
@@ -101,7 +103,7 @@ def user(nickname):
 @app.route('/edit', methods=['GET', 'POST'])
 @login_required
 def edit():
-    form = EditForm()
+    form = EditForm(g.user.nickname)
     if form.validate_on_submit():
         g.user.nickname = form.nickname.data
         g.user.about_me = form.about_me.data
@@ -113,3 +115,14 @@ def edit():
         form.nickname.data = g.user.nickname
         form.about_me.data = g.user.about_me
     return render_template('edit.html', form=form)
+
+
+@app.errorhandler(404)
+def not_found_error(error):
+    return render_template('404.html'), 404
+
+
+@app.errorhandler(500)
+def internal_error(error):
+    db.session.rollback()
+    return render_template('500.html'), 500
